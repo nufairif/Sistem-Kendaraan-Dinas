@@ -2,7 +2,7 @@
 
 Dokumen ini menjadi panduan utama bagi coding agent yang bekerja di repositori **Sistem Pengelolaan Kendaraan Dinas Operasional (SI-KDO BMD)** untuk **BPAD DKI Jakarta**.
 
-## Aplkasi ini dibuat menggunakan dengan Antigravity IDE
+## Aplkasi ini dibuat menggunakan dengan Antigravity IDE dengan model gemini 4 hydrogen
 
 ---
 
