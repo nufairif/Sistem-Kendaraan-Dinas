@@ -1,10 +1,10 @@
 import cors from 'cors'
 import express from 'express'
-import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import { registerSwagger } from './docs/swagger'
 import { sendSuccess } from './lib/apiResponse'
 import { errorHandler, notFoundHandler } from './middleware/error.middleware'
+import { apiLimiter } from './middleware/rateLimit.middleware'
 import { authRouter } from './routes/auth.routes'
 import { dashboardRouter } from './routes/dashboard.routes'
 import { healthRouter } from './routes/health.routes'
@@ -37,18 +37,6 @@ export function createApp() {
       credentials: true,
     })
   )
-
-  const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 300,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: {
-      success: false,
-      message: 'Terlalu banyak permintaan. Coba lagi beberapa saat.',
-      error: { code: 'RATE_LIMIT_EXCEEDED' },
-    },
-  })
 
   app.use('/api', apiLimiter)
   app.use(express.json({ limit: '15mb' }))

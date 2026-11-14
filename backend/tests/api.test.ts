@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { after, before, describe, it } from 'node:test'
-import type { AddressInfo } from 'node:net'
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
 import type { Server } from 'node:http'
-import { createApp } from '../src/app'
-import { prisma } from '../src/lib/db'
-import { seedDatabase } from '../prisma/seed'
+import type { AddressInfo } from 'node:net'
+import path from 'node:path'
+import { after, before, describe, it } from 'node:test'
+import type { PrismaClient } from '@prisma/client'
 
 interface ApiEnvelope<T = unknown> {
   success: boolean
@@ -17,10 +18,21 @@ interface ApiEnvelope<T = unknown> {
   }
 }
 
+const backendRoot = path.resolve(__dirname, '..')
+const testDbPath = path.resolve(backendRoot, 'prisma/test.db')
+const testDbUrl = `file:${testDbPath.replace(/\\/g, '/')}`
+
 let server: Server
+let prismaClient: PrismaClient | null = null
 let baseUrl = ''
 let adminToken = ''
 let viewerToken = ''
+
+function removeTestDbFiles() {
+  for (const suffix of ['', '-journal', '-wal', '-shm']) {
+    fs.rmSync(`${testDbPath}${suffix}`, { force: true })
+  }
+}
 
 async function requestJson<T = unknown>(
   path: string,
@@ -38,7 +50,33 @@ async function requestJson<T = unknown>(
 }
 
 before(async () => {
-  await seedDatabase(prisma)
+  removeTestDbFiles()
+  process.env.DATABASE_URL = testDbUrl
+
+  execFileSync(
+    process.execPath,
+    [
+      require.resolve('prisma/build/index.js'),
+      'db',
+      'push',
+      '--skip-generate',
+      '--accept-data-loss',
+    ],
+    {
+      cwd: backendRoot,
+      env: { ...process.env, DATABASE_URL: testDbUrl },
+      stdio: 'pipe',
+    }
+  )
+
+  const [{ prisma }, { createApp }, { seedTestFixtures }] = await Promise.all([
+    import('../src/lib/db'),
+    import('../src/app'),
+    import('./fixtures'),
+  ])
+
+  prismaClient = prisma
+  await seedTestFixtures(prisma)
   const app = createApp()
   await new Promise<void>((resolve) => {
     server = app.listen(0, () => {
@@ -64,11 +102,13 @@ before(async () => {
 })
 
 after(async () => {
-  await seedDatabase(prisma)
-  await new Promise<void>((resolve, reject) => {
-    server.close((err) => (err ? reject(err) : resolve()))
-  })
-  await prisma.$disconnect()
+  if (server) {
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()))
+    })
+  }
+  await prismaClient?.$disconnect()
+  removeTestDbFiles()
 })
 
 describe('SI-KDO BMD REST API & Swagger', () => {
@@ -463,12 +503,51 @@ describe('SI-KDO BMD REST API & Swagger', () => {
 
   it('Roles CRUD & dynamic RBAC allow custom role assignment, live permission enforcement, and code cascade', async () => {
     const rolesRes = await requestJson<
-      Array<{ id: number; code: string; isSystem: boolean }>
+      Array<{
+        id: number
+        code: string
+        name: string
+        description: string | null
+        isSystem: boolean
+        permissions: Record<
+          string,
+          { read: boolean; create: boolean; update: boolean; delete: boolean }
+        >
+      }>
     >('/api/roles', {
       headers: { Authorization: `Bearer ${adminToken}` },
     })
     assert.equal(rolesRes.status, 200)
     assert.equal(rolesRes.body.data.length, 3)
+
+    const adminRole = rolesRes.body.data.find((r) => r.code === 'ADMIN_BPAD')!
+    const editAdminPerms = await requestJson(`/api/roles/${adminRole.id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({
+        code: adminRole.code,
+        name: adminRole.name,
+        description: adminRole.description,
+        permissions: {
+          ...adminRole.permissions,
+          kendaraan: { read: true, create: false, update: true, delete: true },
+          servis: { read: true, create: true, update: true, delete: false },
+        },
+      }),
+    })
+    assert.equal(editAdminPerms.status, 403)
+
+    const adminRoleCheck = await requestJson<{
+      permissions: Record<
+        string,
+        { read: boolean; create: boolean; update: boolean; delete: boolean }
+      >
+    }>(`/api/roles/${adminRole.id}`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    })
+    assert.equal(adminRoleCheck.status, 200)
+    assert.equal(adminRoleCheck.body.data.permissions.kendaraan.create, true)
+    assert.equal(adminRoleCheck.body.data.permissions.servis.delete, true)
 
     const sysRole = rolesRes.body.data.find((r) => r.code === 'VIEWER')!
     const delSystem = await requestJson(`/api/roles/${sysRole.id}`, {

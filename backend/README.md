@@ -34,17 +34,17 @@ flowchart LR
 ```text
 backend/
 ├── prisma/
-│   ├── schema.prisma               # Skema RDBMS (6 model tabel, FK, unique, index)
+│   ├── schema.prisma               # Skema RDBMS (8 model tabel, FK, unique, index)
 │   ├── seed.ts                     # Seeder data awal + reset sqlite_sequence (ID mulai dari 1)
 │   ├── dump.sql                    # SQL dump lengkap (DDL CREATE TABLE/INDEX + INSERT data awal)
 │   └── dev.db                      # File database SQLite lokal (di-ignore Git)
 ├── src/
 │   ├── docs/
 │   │   ├── paths/
-│   │   │   ├── fleet.paths.ts      # Spesifikasi endpoint /api/kendaraan & /api/servis
+│   │   │   ├── fleet.paths.ts      # Spesifikasi endpoint /api/kendaraan, /api/peminjaman & /api/servis
 │   │   │   ├── master.paths.ts     # Spesifikasi endpoint /api/perangkat-daerah & /api/pegawai
 │   │   │   ├── system.paths.ts     # Spesifikasi endpoint /api/health, /api/auth, /api/dashboard
-│   │   │   └── users.paths.ts      # Spesifikasi endpoint /api/users
+│   │   │   └── users.paths.ts      # Spesifikasi endpoint /api/users & /api/roles
 │   │   ├── components.ts           # Skema DTO, securitySchemes (bearerAuth), & response error standar
 │   │   ├── helpers.ts              # Helper builder schema & response OpenAPI
 │   │   └── swagger.ts              # Perakitan OpenAPI 3.0.3 & mount Swagger UI (/api-docs)
@@ -55,10 +55,11 @@ backend/
 │   │   ├── httpError.ts            # Kelas HttpError (400, 401, 403, 404, 409)
 │   │   ├── jwt.ts                  # Sign & verifikasi JWT Bearer Token
 │   │   ├── password.ts             # Hash & verifikasi kata sandi menggunakan bcryptjs
-│   │   ├── serializers.ts          # Parse kolom JSON string (foto/dokumen) & sembunyikan passwordHash
+│   │   ├── permissions.ts          # Normalisasi kode role & matriks RolePermissionMap
+│   │   ├── serializers.ts          # Parse kolom JSON string (foto/dokumen/permissions) & sembunyikan passwordHash
 │   │   └── tax.ts                  # Perhitungan status jatuh tempo PKB tahunan & plat 5 tahunan
 │   ├── middleware/
-│   │   ├── auth.middleware.ts      # Middleware authenticate (JWT) & requireRoles (RBAC)
+│   │   ├── auth.middleware.ts      # Middleware authenticate (JWT + cek DB) & requirePermission (RBAC dinamis)
 │   │   ├── error.middleware.ts     # Global error handler (HttpError, Zod, Prisma, JSON, 413) & 404 handler
 │   │   └── validate.middleware.ts  # Parser & validator parameter path :id
 │   ├── routes/                     # Thin HTTP route handlers (hanya urus request/response HTTP)
@@ -67,7 +68,9 @@ backend/
 │   │   ├── health.routes.ts        # /api/health
 │   │   ├── kendaraan.routes.ts     # /api/kendaraan, /:id, /:id/riwayat
 │   │   ├── pegawai.routes.ts       # /api/pegawai, /:id
+│   │   ├── peminjaman.routes.ts    # /api/peminjaman, /:id, /:id/complete
 │   │   ├── perangkat-daerah.routes.ts # /api/perangkat-daerah, /:id
+│   │   ├── roles.routes.ts         # /api/roles, /:id
 │   │   ├── servis.routes.ts        # /api/servis, /:id
 │   │   └── users.routes.ts         # /api/users, /:id
 │   ├── schemas/                    # Skema validasi request body & query parameter (Zod)
@@ -75,7 +78,9 @@ backend/
 │   │   ├── dashboard.schema.ts
 │   │   ├── kendaraan.schema.ts
 │   │   ├── pegawai.schema.ts
+│   │   ├── peminjaman.schema.ts
 │   │   ├── perangkat-daerah.schema.ts
+│   │   ├── roles.schema.ts
 │   │   ├── servis.schema.ts
 │   │   └── user.schema.ts
 │   ├── services/                   # Layer aturan bisnis, validasi relasi, & transaksi Prisma
@@ -83,7 +88,9 @@ backend/
 │   │   ├── dashboard.service.ts
 │   │   ├── kendaraan.service.ts
 │   │   ├── pegawai.service.ts
+│   │   ├── peminjaman.service.ts
 │   │   ├── perangkat-daerah.service.ts
+│   │   ├── roles.service.ts
 │   │   ├── servis.service.ts
 │   │   └── users.service.ts
 │   ├── app.ts                      # Konfigurasi Express app, Helmet, CORS, rate limit, Swagger & routes

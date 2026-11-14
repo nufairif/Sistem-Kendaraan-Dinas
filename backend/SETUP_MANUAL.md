@@ -81,8 +81,10 @@ npm --prefix backend run db:seed
 ```
 
 Hasil yang diharapkan:
-- File `backend/prisma/dev.db` terbentuk otomatis.
-- Database terisi **3** Perangkat Daerah (`DISDIK`, `DINKES`, `PUPR`), **6** Pegawai (PNS), **8** Kendaraan Dinas Operasional, **4** Riwayat Kendaraan, **4** Catatan Servis, dan **3** akun pengguna.
+- File `backend/prisma/dev.db` terbentuk otomatis dalam kondisi **bersih tanpa data dummy** (`PerangkatDaerah`, `Pegawai`, `KendaraanDinas`, `RiwayatKendaraan`, `ServisKendaraan`, dan `PeminjamanKendaraan` berjumlah `0`).
+- Database hanya berisi **1 role bawaan** `ADMIN_BPAD` (**Super Admin** dengan akses penuh seluruh modul) dan **1 akun Super Admin** (`admin.bpad` / `admin123`, dapat disesuaikan lewat `SEED_ADMIN_USERNAME`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_NAMA` saat seeding).
+
+*(Catatan: Untuk keperluan pengujian otomatis, suite test menggunakan fixture terisolasi lalu mereset kembali `dev.db` ke kondisi bersih 1 Super Admin setelah selesai.)*
 
 Jika suatu saat ingin mengulang database dari kondisi bersih:
 ```powershell
@@ -144,10 +146,8 @@ Status yang diharapkan: `200 OK` dengan `"status": "UP"` dan `"database": "conne
 
 ### 6.2 Uji Coba Interaktif via Swagger UI
 1. Buka **`http://localhost:3001/api-docs`** di browser.
-2. Buka grup **Auth** -> **`POST /api/auth/login`** -> **Try it out** -> **Execute** menggunakan salah satu akun uji coba:
-   - `admin.bpad` / `admin123` (`ADMIN_BPAD` — akses penuh)
-   - `operator.disdik` / `operator123` (`OPERATOR_SKPD` — kelola operasional)
-   - `auditor.bmd` / `auditor123` (`VIEWER` — hanya baca `GET`)
+2. Buka grup **Auth** -> **`POST /api/auth/login`** -> **Try it out** -> **Execute** menggunakan akun Super Admin default:
+   - `admin.bpad` / `admin123` (`ADMIN_BPAD` — Super Admin akses penuh)
 3. Salin nilai `data.token` dari response JSON.
 4. Klik tombol **Authorize** di kanan atas halaman Swagger UI, tempel token pada kolom `Value`, lalu klik **Authorize**.
 5. Seluruh endpoint terproteksi kini siap dicoba langsung dari Swagger UI.
@@ -156,7 +156,7 @@ Status yang diharapkan: `200 OK` dengan `"status": "UP"` dan `"database": "conne
 ```powershell
 npm --prefix backend test
 ```
-Suite test di [tests/api.test.ts](./tests/api.test.ts) akan melakukan seed ulang database dan memverifikasi 8 skenario end-to-end (health check, Swagger UI/JSON, autentikasi `401`, RBAC `403`, dashboard, validasi `400`, konflik `409`, `404`, riwayat otomatis KDO, servis, serta kerahasiaan `passwordHash`).
+Suite test di [tests/api.test.ts](./tests/api.test.ts) akan melakukan seed ulang database dan memverifikasi **10 skenario end-to-end** (health check, Swagger UI/JSON, autentikasi `401`, RBAC `403`, dashboard + `totalSedangDipinjam`, validasi `400`, konflik `409`, `404`, riwayat otomatis KDO, servis, kerahasiaan `passwordHash`, CRUD peminjaman + pengembalian, serta CRUD role & RBAC dinamis).
 
 ---
 
@@ -167,5 +167,6 @@ Suite test di [tests/api.test.ts](./tests/api.test.ts) akan melakukan seed ulang
 | `npm error code ENOENT ... package.json` | Menjalankan `npm --prefix backend ...` saat terminal sudah berada di dalam `frontend/` atau `backend/` | Pindah ke root `d:\1-dev\personal\bpad-dki` terlebih dahulu, atau masuk ke `backend/` lalu jalankan `npm run dev` tanpa `--prefix backend` |
 | `Error: @prisma/client did not initialize yet` | Prisma Client belum di-generate setelah install | Jalankan `npm --prefix backend run db:generate` |
 | `EADDRINUSE: address already in use :::3001` | Port `3001` sudah dipakai proses lain | Hentikan proses lama di port `3001` atau ubah `PORT` di `backend/.env` |
+| `EPERM` saat `prisma generate` pada Windows | Server `tsx watch` masih berjalan dan mengunci `query_engine-windows.dll.node` | Hentikan server `npm run dev` terlebih dahulu, jalankan `db:generate`, lalu jalankan ulang server |
 | `JWT_SECRET wajib dikonfigurasi pada environment production` | Menjalankan `NODE_ENV=production` tanpa `JWT_SECRET` di `.env` | Isi variabel `JWT_SECRET` di `backend/.env` |
 | `401 Unauthorized` di Swagger UI | Belum login atau belum mengisi token di tombol **Authorize** | Login via `POST /api/auth/login` lalu masukkan `data.token` ke **Authorize** |

@@ -3,10 +3,25 @@ import { prisma } from '../lib/db'
 import {
   BadRequestError,
   ConflictError,
+  ForbiddenError,
   NotFoundError,
 } from '../lib/httpError'
-import { serializeRole } from '../lib/serializers'
+import {
+  PAGE_PERMISSION_KEYS,
+  normalizePermissionMap,
+  type CrudAction,
+  type RolePermissionMap,
+} from '../lib/permissions'
+import { safeJsonParse, serializeRole } from '../lib/serializers'
 import type { roleInputSchema } from '../schemas/roles.schema'
+
+const CRUD_ACTIONS: CrudAction[] = ['read', 'create', 'update', 'delete']
+
+function arePermissionsEqual(a: RolePermissionMap, b: RolePermissionMap): boolean {
+  return PAGE_PERMISSION_KEYS.every((key) =>
+    CRUD_ACTIONS.every((action) => a[key][action] === b[key][action])
+  )
+}
 
 export type RoleInput = z.infer<typeof roleInputSchema>
 
@@ -81,15 +96,16 @@ export async function updateRole(id: number, input: RoleInput) {
     )
   }
 
-  if (
-    existing.code === 'ADMIN_BPAD' &&
-    (!input.permissions.roles.read ||
-      !input.permissions.roles.update ||
-      !input.permissions.users.read)
-  ) {
-    throw new BadRequestError(
-      'Role ADMIN_BPAD harus tetap memiliki akses Lihat/Ubah pada Manajemen Role dan User agar tidak terkunci.'
+  const isSuperAdminRole = existing.code === 'ADMIN_BPAD'
+  if (isSuperAdminRole) {
+    const currentPermissions = normalizePermissionMap(
+      safeJsonParse<Record<string, unknown>>(existing.permissions, {})
     )
+    if (!arePermissionsEqual(currentPermissions, input.permissions)) {
+      throw new ForbiddenError(
+        'Hak akses (permission) role Super Admin (ADMIN_BPAD) bersifat tetap dan tidak dapat diubah.'
+      )
+    }
   }
 
   const updated = await prisma.roleDefinition.update({
@@ -98,7 +114,9 @@ export async function updateRole(id: number, input: RoleInput) {
       code: nextCode,
       name: input.name,
       description: input.description,
-      permissions: JSON.stringify(input.permissions),
+      permissions: isSuperAdminRole
+        ? existing.permissions
+        : JSON.stringify(input.permissions),
     },
     include: { _count: { select: { users: true } } },
   })
@@ -116,7 +134,9 @@ export async function deleteRole(id: number) {
   }
   if (target.isSystem) {
     throw new BadRequestError(
-      `Role bawaan "${target.name}" tidak dapat dihapus, namun hak akses CRUD per halamannya dapat Anda ubah lewat Edit.`
+      target.code === 'ADMIN_BPAD'
+        ? `Role Super Admin "${target.name}" bersifat permanen dan tidak dapat dihapus.`
+        : `Role bawaan "${target.name}" tidak dapat dihapus, namun hak akses CRUD per halamannya dapat Anda ubah lewat Edit.`
     )
   }
   if (target._count.users > 0) {
