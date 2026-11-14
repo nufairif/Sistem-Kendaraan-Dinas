@@ -1,23 +1,23 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/layout/AppLayout'
-import { DashboardPage } from './pages/DashboardPage'
-import { KendaraanPage } from './pages/KendaraanPage'
-import { LoginPage } from './pages/LoginPage'
-import { MonitoringPage } from './pages/MonitoringPage'
-import { PajakDokumenPage } from './pages/PajakDokumenPage'
-import { PegawaiPage } from './pages/PegawaiPage'
-import { PerangkatDaerahPage } from './pages/PerangkatDaerahPage'
-import { RolesPage } from './pages/RolesPage'
-import { ServisPage } from './pages/ServisPage'
-import { UsersPage } from './pages/UsersPage'
+import { LoginPage } from './features/auth/LoginPage'
+import { DashboardPage } from './features/dashboard/DashboardPage'
+import { KendaraanPage } from './features/kendaraan/KendaraanPage'
+import { MonitoringPage } from './features/monitoring/MonitoringPage'
+import { PajakDokumenPage } from './features/pajak/PajakDokumenPage'
+import { PegawaiPage } from './features/pegawai/PegawaiPage'
+import { PerangkatDaerahPage } from './features/perangkat-daerah/PerangkatDaerahPage'
+import { RolesPage } from './features/roles/RolesPage'
+import { ServisPage } from './features/servis/ServisPage'
+import { UsersPage } from './features/users/UsersPage'
 import {
+  AUTH_UNAUTHORIZED_EVENT,
   getCurrentSession,
-  getPermissionsForRole,
-  getRoleNameByCode,
   logoutUser,
-} from './services/bmdService'
+  refreshCurrentSession,
+} from './services/auth.service'
 import type { AuthSession } from './types/bmd'
 
 function ForbiddenPage({ pageLabel }: { pageLabel: string }) {
@@ -39,8 +39,30 @@ export function App() {
     getCurrentSession()
   )
   const [selectedPdId, setSelectedPdId] = useState<number | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0)
-  const [, setPermVersion] = useState(0)
+
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setSession(null)
+      setSelectedPdId(null)
+    }
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized)
+    return () => {
+      window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!session?.token) return
+    let active = true
+    refreshCurrentSession().then((updated) => {
+      if (active && updated) {
+        setSession(updated)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [session?.token])
 
   const handleLoginSuccess = (newSession: AuthSession) => {
     setSession(newSession)
@@ -53,18 +75,15 @@ export function App() {
     setSelectedPdId(null)
   }
 
-  const handleDatabaseReset = () => {
-    setSelectedPdId(null)
-    setRefreshKey((k) => k + 1)
-    setPermVersion((v) => v + 1)
-  }
+  const handlePermissionsChanged = useCallback(async () => {
+    const updated = await refreshCurrentSession()
+    if (updated) {
+      setSession(updated)
+    }
+  }, [])
 
-  const handlePermissionsChanged = () => {
-    setPermVersion((v) => v + 1)
-  }
-
-  const permissions = session ? getPermissionsForRole(session.role) : null
-  const roleLabel = session ? getRoleNameByCode(session.role) : ''
+  const permissions = session ? session.permissions : null
+  const roleLabel = session ? session.roleName || session.role : ''
 
   return (
     <BrowserRouter>
@@ -84,9 +103,8 @@ export function App() {
           selectedPdId={selectedPdId}
           onChangeSelectedPdId={setSelectedPdId}
           onLogout={handleLogout}
-          onDatabaseReset={handleDatabaseReset}
         >
-          <Routes key={refreshKey}>
+          <Routes>
             <Route
               path="/"
               element={

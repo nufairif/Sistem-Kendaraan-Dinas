@@ -50,7 +50,7 @@ Sesuai konfigurasi pada [`package.json`](./package.json) dan [`vite.config.ts`](
 
 ## Arsitektur & Struktur Direktori
 
-Frontend menggunakan arsitektur berlapis (*UI Pages → Service Layer → Persistence / Seed*) dengan penyimpanan lokal browser (`localStorage`) dan dukungan skema tipe terpusat.
+Frontend menggunakan arsitektur **Feature-Based Modular** (*Pages/Features → Custom Hooks → Domain Services → Shared API Client → Backend REST API*) yang terhubung penuh ke server Express + Prisma (`backend/`) menggunakan autentikasi JWT Bearer dan penyimpanan sesi browser (`localStorage`).
 
 ```text
 frontend/
@@ -64,41 +64,68 @@ frontend/
 └── src/
     ├── main.tsx                      # Bootstrap React root & styles
     ├── index.css                     # Import Tailwind CSS v4 & token tema dasar
-    ├── App.tsx                       # Router utama, session guard, dan proteksi RBAC per route
+    ├── App.tsx                       # Router utama, sinkronisasi sesi /api/auth/me, dan proteksi RBAC
+    ├── lib/
+    │   └── apiClient.ts              # Fetch client terpusat (/api/*), JWT header, sesi localStorage, & event 401
+    ├── constants/
+    │   └── domainOptions.ts          # Konstanta domain (merek, jenis servis, golongan PNS, lokasi parkir, matriks RBAC)
+    ├── hooks/
+    │   ├── useAsyncData.ts           # Hook pemuatan data asinkron generik (loading, error, reload)
+    │   └── useConfirmDelete.ts       # Hook status & eksekusi dialog konfirmasi hapus generik
     ├── types/
-    │   └── bmd.ts                    # Kontrak TypeScript (Kendaraan, Peminjaman, Servis, Role, User, dll.)
-    ├── data/
-    │   └── seedData.ts               # Data awal demo (SKPD, PNS, KDO, Riwayat, Servis, Peminjaman, Roles, Users)
+    │   └── bmd.ts                    # Kontrak TypeScript DTO backend (Kendaraan, Peminjaman, Servis, Role, User, dll.)
     ├── services/
-    │   └── bmdService.ts             # CRUD, validasi kelayakan pinjam, agregasi dashboard, auth, & migrasi localStorage
+    │   ├── bmdService.ts             # Barrel re-export untuk kompatibilitas impor lintas modul
+    │   ├── auth.service.ts           # Login, refresh /api/auth/me, dan manajemen sesi
+    │   ├── dashboard.service.ts      # Ringkasan eksekutif dashboard (/api/dashboard)
+    │   ├── kendaraan.service.ts      # CRUD KDO & riwayat kendaraan
+    │   ├── master.service.ts         # CRUD Perangkat Daerah & Pegawai (PNS)
+    │   ├── peminjaman.service.ts     # CRUD peminjaman & pengembalian kendaraan
+    │   ├── rbac.service.ts           # CRUD User & Role/RBAC
+    │   └── servis.service.ts         # CRUD catatan servis & pemeliharaan
     ├── utils/
-    │   ├── format.ts                 # Formatter tanggal/NIP/rupiah, konstanta opsi, & evaluateVehicleBorrowStatus
+    │   ├── format.ts                 # Formatter tanggal/NIP/rupiah/label murni
+    │   ├── vehicleRules.ts           # Aturan bisnis status pajak (getTaxStatus) & kelayakan pinjam
     │   └── imageUpload.ts            # Konversi gambar ke WebP, resize maks 960px, & pembacaan dokumen PDF/gambar
-    └── components/
-        ├── layout/
-        │   └── AppLayout.tsx         # Sidebar navigasi, filter global SKPD, topbar, & tombol reset seed
-        └── common/
-            ├── ConfirmDialog.tsx     # Dialog konfirmasi aksi destruktif/reset
-            ├── CustomSelect.tsx      # Komponen dropdown kustom berbasis Portal + pencarian + keyboard nav
-            ├── DocumentViewerModal.tsx # Modal pratinjau gambar & PDF serta unduhan file
-            ├── KondisiBadge.tsx      # Badge semantik kondisi fisik KDO
-            ├── Modal.tsx             # Wrapper modal responsif dengan penanganan Escape
-            └── StateViews.tsx        # Komponen LoadingState, EmptyState, dan ErrorState
+    ├── components/
+    │   ├── layout/
+    │   │   └── AppLayout.tsx         # Sidebar sticky navigasi, filter global SKPD, & topbar sesi pengguna
+    │   └── common/
+    │       ├── ConfirmDialog.tsx     # Dialog konfirmasi aksi destruktif
+    │       ├── CustomSelect.tsx      # Komponen dropdown kustom + keyboard navigation & form validation bridge
+    │       ├── CustomSelectMenu.tsx  # Panel Portal daftar opsi & pencarian untuk CustomSelect
+    │       ├── DocumentViewerModal.tsx # Modal pratinjau gambar & PDF serta unduhan file
+    │       ├── FeedbackBanner.tsx    # Banner notifikasi sukses/error standar yang dapat ditutup
+    │       ├── KondisiBadge.tsx      # Badge semantik kondisi fisik KDO
+    │       ├── Modal.tsx             # Wrapper modal responsif dengan penanganan Escape
+    │       ├── StateViews.tsx        # Komponen LoadingState, EmptyState, dan ErrorState
+    │       └── StatusBadges.tsx      # Badge status peminjaman & status servis terstandar
+    └── features/                     # Modul fitur terpisah per domain (Page orchestrator, Table/Grid, FormModal, DetailModal)
+        ├── auth/                     # LoginPage.tsx
+        ├── dashboard/                # DashboardPage.tsx, DashboardSkpdSection.tsx, DashboardHistorySection.tsx
+        ├── kendaraan/                # KendaraanPage, KendaraanTable, KendaraanFormModal, KendaraanDetailModal, kendaraanFormUtils
+        ├── monitoring/               # MonitoringPage, FleetStatusSection, PeminjamanTable, PeminjamanFormModal, ReturnVehicleModal, PeminjamanDetailModal
+        ├── pajak/                    # PajakDokumenPage.tsx, PajakTable.tsx
+        ├── pegawai/                  # PegawaiPage, PegawaiTable, PegawaiFormModal, PegawaiDetailModal
+        ├── perangkat-daerah/         # PerangkatDaerahPage, PerangkatDaerahGrid, PerangkatDaerahFormModal, PerangkatDaerahDetailModal
+        ├── roles/                    # RolesPage, RoleCardList, RoleFormModal
+        ├── servis/                   # ServisPage, ServisTable, ServisFormModal, ServisDetailModal
+        └── users/                    # UsersPage, UsersTable, UserFormModal, UserStatusSwitch
 ```
 
 ### Alur Otorisasi, Routing, & Data
 
 ```mermaid
 flowchart TD
-    User["Pengguna Browser"] --> App["App.tsx (Session Check)"]
-    App -->|"Belum Login"| Login["LoginPage.tsx (/login)"]
-    App -->|"Sudah Login"| Layout["AppLayout.tsx (Sidebar + Filter SKPD)"]
+    User["Pengguna Browser"] --> App["App.tsx (Cek Token & /api/auth/me)"]
+    App -->|"Belum Login / 401"| Login["features/auth/LoginPage.tsx (/login)"]
+    App -->|"Sesi Valid"| Layout["AppLayout.tsx (Sidebar Sticky + Filter SKPD)"]
     Layout --> Guard{"Cek RolePermissionMap"}
-    Guard -->|"Izin read = true"| Pages["Pages (Dashboard, Kendaraan, Monitoring, Servis, Pajak, Pegawai, SKPD, Users, Roles)"]
+    Guard -->|"Izin read = true"| Features["features/* (Page + Table + Modal + useAsyncData)"]
     Guard -->|"Izin read = false"| Forbidden["ForbiddenPage (Akses Ditolak)"]
-    Pages --> Service["bmdService.ts (Validasi & Logika Bisnis)"]
-    Service --> Storage["localStorage (si_kdo_bmd_db_v1 & si_kdo_bmd_session_v1)"]
-    Service -->|"Data Kosong / Versi Lama"| Seed["seedData.ts (Auto Seed & Migrasi Skema)"]
+    Features --> Services["services/*.service.ts -> lib/apiClient.ts"]
+    Services <-->|"HTTP JSON (/api/* via Proxy :5173 -> :3001)"| Backend["Backend Express + Prisma SQLite"]
+    Services --> Session["localStorage (si_kdo_bmd_session_v1)"]
 ```
 
 ---
@@ -120,25 +147,24 @@ flowchart TD
 
 ---
 
-## Penyimpanan Data, Upload Media, & Konfigurasi Proxy
+## Sesi Autentikasi, Upload Media, & Integrasi API Backend
 
-### 1. Kunci `localStorage` (`src/services/bmdService.ts`)
+### 1. Sesi `localStorage` & Autentikasi JWT (`src/lib/apiClient.ts` & `src/services/auth.service.ts`)
 
 | Key | Fungsi |
 |---|---|
-| `si_kdo_bmd_db_v1` | Menyimpan seluruh koleksi entitas aplikasi (`perangkatDaerah`, `pegawai`, `kendaraan`, `riwayat`, `servis`, `peminjaman`, `roles`, `users`, `nextIds`). |
-| `si_kdo_bmd_session_v1` | Menyimpan sesi login aktif (`AuthSession`). |
+| `si_kdo_bmd_session_v1` | Menyimpan sesi login aktif (`AuthSession`: `token` JWT, profil user, `roleName`, dan `permissions`). |
 
-Saat `readDb()` dijalankan pada data lama, sistem otomatis melakukan migrasi non-destruktif untuk menambahkan koleksi/field baru seperti `servis`, `peminjaman`, `roles`, `users`, `fotos[]`, `lokasiParkir`, maupun izin role baru.
+Seluruh data entitas (`PerangkatDaerah`, `Pegawai`, `Kendaraan`, `Riwayat`, `Servis`, `Peminjaman`, `Users`, `Roles`) diambil dan disimpan secara real-time melalui REST API backend (`/api/*`) via modul service terpisah (`src/services/*.service.ts`) dengan header `Authorization: Bearer <token>`. Jika server mengembalikan HTTP `401`, interceptor di [`apiClient.ts`](./src/lib/apiClient.ts) menghapus sesi lokal dan memicu event `AUTH_UNAUTHORIZED_EVENT` agar pengguna diarahkan kembali ke halaman login.
 
 ### 2. Aturan Pemrosesan Media (`src/utils/imageUpload.ts`)
 
 - **Foto Kendaraan**: Menerima `.jpg`, `.jpeg`, `.png`, `.webp` maksimal **`5 MB`**, di-resize proporsional maksimal **`960px`**, lalu otomatis dikonversi di browser menggunakan HTML Canvas menjadi **`.webp`** (kualitas `0.8`).
-- **Dokumen STNK, BPKB, & Nota Servis**: Menerima gambar (otomatis dikonversi ke `.webp`) atau file **PDF** dengan batas maksimal **`1.5 MB`** agar muat di penyimpanan lokal browser.
+- **Dokumen STNK, BPKB, & Nota Servis**: Menerima gambar (otomatis dikonversi ke `.webp`) atau file **PDF** dengan batas maksimal **`1.5 MB`** (dikirim sebagai data URI Base64 dalam limit payload JSON backend **`15 MB`**).
 
-### 3. Konfigurasi Server & Proxy (`vite.config.ts`)
+### 3. Konfigurasi Server, Proxy, & `VITE_API_URL`
 
-Dev server Vite berjalan di port **`5173`** dan meneruskan request dengan prefix **`/api`** ke **`http://localhost:3001`** (`changeOrigin: true`). Pada kondisi default frontend saat ini, seluruh operasi UI berinteraksi dengan [`bmdService.ts`](./src/services/bmdService.ts) (`localStorage`).
+Dev server Vite berjalan di port **`5173`** dan meneruskan request dengan prefix **`/api`** ke **`http://localhost:3001`** (`changeOrigin: true`) sesuai [`vite.config.ts`](./vite.config.ts). Secara opsional, atur environment variable `VITE_API_URL` jika frontend di-host terpisah dari server API backend.
 
 ---
 

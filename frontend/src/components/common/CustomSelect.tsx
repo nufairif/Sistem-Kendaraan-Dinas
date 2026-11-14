@@ -7,8 +7,8 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
-import { createPortal } from 'react-dom'
-import { Check, ChevronDown, Search, X } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
+import { CustomSelectMenu, type MenuPosition } from './CustomSelectMenu'
 
 export interface CustomSelectOption {
   value: string
@@ -34,15 +34,6 @@ interface CustomSelectProps {
   emptyMessage?: string
   className?: string
   ariaLabel?: string
-}
-
-interface MenuPosition {
-  left: number
-  width: number
-  top?: number
-  bottom?: number
-  maxHeight: number
-  placement: 'bottom' | 'top'
 }
 
 export function CustomSelect({
@@ -346,195 +337,30 @@ export function CustomSelect({
         />
       </button>
 
-      {isOpen &&
-        menuPosition &&
-        createPortal(
-          <div
-            ref={menuRef}
-            style={{
-              position: 'fixed',
-              left: menuPosition.left,
-              width: menuPosition.width,
-              top: menuPosition.top,
-              bottom: menuPosition.bottom,
-              zIndex: 120,
-            }}
-            onKeyDown={handleKeyDown}
-            className={`overflow-hidden rounded-2xl border shadow-[0_20px_45px_-12px_rgba(10,54,73,0.28)] ${
-              isDark
-                ? 'border-white/15 bg-[#072938] text-white'
-                : 'border-slate-200/90 bg-white text-slate-900 ring-1 ring-slate-900/5'
-            }`}
-          >
-            {isSearchEnabled && (
-              <div
-                className={`border-b p-2 ${
-                  isDark
-                    ? 'border-white/10 bg-[#06222f]'
-                    : 'border-slate-100 bg-slate-50/80'
-                }`}
-              >
-                <div className="relative flex items-center">
-                  <Search
-                    className={`pointer-events-none absolute left-2.5 h-3.5 w-3.5 ${
-                      isDark ? 'text-slate-400' : 'text-slate-400'
-                    }`}
-                    aria-hidden="true"
-                  />
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value)
-                      setHighlightedIndex(0)
-                    }}
-                    placeholder={searchPlaceholder}
-                    className={`h-9 w-full rounded-xl border pl-8 pr-7 text-xs focus:outline-none ${
-                      isDark
-                        ? 'border-white/15 bg-[#0a3649] text-white placeholder:text-slate-400 focus:border-[#38bdf8]'
-                        : 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-[#2563eb]'
-                    }`}
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchQuery('')
-                        setHighlightedIndex(0)
-                        searchInputRef.current?.focus()
-                      }}
-                      aria-label="Hapus pencarian"
-                      className={`absolute right-2 rounded p-0.5 ${
-                        isDark
-                          ? 'text-slate-300 hover:text-white'
-                          : 'text-slate-400 hover:text-slate-700'
-                      }`}
-                    >
-                      <X className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <ul
-              id={listboxId}
-              role="listbox"
-              aria-labelledby={triggerId}
-              style={{
-                maxHeight: Math.max(
-                  110,
-                  menuPosition.maxHeight - (isSearchEnabled ? 54 : 0)
-                ),
-              }}
-              className="overflow-y-auto p-1.5 space-y-0.5"
-            >
-              {filteredOptions.length === 0 ? (
-                <li
-                  className={`px-3 py-4 text-center text-xs ${
-                    isDark ? 'text-slate-300' : 'text-slate-500'
-                  }`}
-                >
-                  {emptyMessage}
-                </li>
-              ) : (
-                filteredOptions.map((opt, idx) => {
-                  const isSelected = opt.value === value
-                  const isHighlighted = idx === highlightedIndex
-
-                  return (
-                    <li
-                      key={`${opt.value}-${idx}`}
-                      role="option"
-                      aria-selected={isSelected}
-                      aria-disabled={opt.disabled}
-                      onMouseEnter={() => {
-                        if (!opt.disabled) setHighlightedIndex(idx)
-                      }}
-                      onClick={() => {
-                        if (!opt.disabled) selectValue(opt.value)
-                      }}
-                      className={`flex items-center justify-between gap-2.5 rounded-xl px-3 py-2 text-xs transition-colors ${
-                        opt.disabled
-                          ? isDark
-                            ? 'cursor-not-allowed text-slate-500 opacity-60'
-                            : 'cursor-not-allowed text-slate-400 opacity-60'
-                          : isSelected
-                            ? isDark
-                              ? 'cursor-pointer bg-[#2563eb] font-semibold text-white'
-                              : 'cursor-pointer bg-blue-50 font-semibold text-[#1d4ed8]'
-                            : isHighlighted
-                              ? isDark
-                                ? 'cursor-pointer bg-white/10 text-white'
-                                : 'cursor-pointer bg-slate-100 text-slate-900'
-                              : isDark
-                                ? 'cursor-pointer text-slate-100 hover:bg-white/10'
-                                : 'cursor-pointer text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className="flex min-w-0 flex-1 items-start gap-2">
-                        {opt.dotClassName && (
-                          <span
-                            className={`mt-1 h-2 w-2 shrink-0 rounded-full ${opt.dotClassName}`}
-                            aria-hidden="true"
-                          />
-                        )}
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] leading-snug">
-                            {opt.label}
-                          </span>
-                          {opt.description && (
-                            <span
-                              className={`mt-0.5 block truncate text-[11px] font-normal ${
-                                isSelected
-                                  ? isDark
-                                    ? 'text-blue-100'
-                                    : 'text-[#2563eb]/80'
-                                  : isDark
-                                    ? 'text-slate-300'
-                                    : 'text-slate-500'
-                              }`}
-                            >
-                              {opt.description}
-                            </span>
-                          )}
-                        </span>
-                      </span>
-
-                      <span className="flex shrink-0 items-center gap-1.5">
-                        {opt.badge && (
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                              isSelected
-                                ? isDark
-                                  ? 'bg-white/20 text-white'
-                                  : 'bg-blue-100 text-[#1d4ed8]'
-                                : isDark
-                                  ? 'bg-white/10 text-slate-200'
-                                  : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {opt.badge}
-                          </span>
-                        )}
-                        {isSelected && (
-                          <Check
-                            className={`h-4 w-4 shrink-0 ${
-                              isDark ? 'text-white' : 'text-[#2563eb]'
-                            }`}
-                            aria-hidden="true"
-                          />
-                        )}
-                      </span>
-                    </li>
-                  )
-                })
-              )}
-            </ul>
-          </div>,
-          document.body
-        )}
+      {isOpen && menuPosition && (
+        <CustomSelectMenu
+          menuRef={menuRef}
+          searchInputRef={searchInputRef}
+          triggerId={triggerId}
+          listboxId={listboxId}
+          menuPosition={menuPosition}
+          isDark={isDark}
+          isSearchEnabled={isSearchEnabled}
+          searchQuery={searchQuery}
+          searchPlaceholder={searchPlaceholder}
+          emptyMessage={emptyMessage}
+          value={value}
+          highlightedIndex={highlightedIndex}
+          filteredOptions={filteredOptions}
+          onSearchChange={(next) => {
+            setSearchQuery(next)
+            setHighlightedIndex(0)
+          }}
+          onHighlight={setHighlightedIndex}
+          onSelect={selectValue}
+          onKeyDown={handleKeyDown}
+        />
+      )}
     </div>
   )
 }

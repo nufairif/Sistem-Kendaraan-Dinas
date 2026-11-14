@@ -23,25 +23,31 @@ npm -v
 
 ## 2. Langkah Instalasi & Menjalankan Frontend (Manual Setup)
 
-### Opsi A — Menjalankan Frontend Saja (Mode Stand-Alone / `localStorage`)
+### Opsi A — Menjalankan Backend & Frontend Secara Terpisah
 
-Secara default, frontend SI-KDO BMD sudah dilengkapi seed data dan persistensi `localStorage` lengkap sehingga dapat langsung dijalankan tanpa menunggu setup database eksternal.
+Frontend kini terintegrasi penuh dengan API backend (`backend/`), sehingga server backend perlu berjalan di port **`3001`** saat aplikasi digunakan.
 
-1. **Masuk ke direktori `frontend`:**
+1. **Siapkan & jalankan server Backend:**
+
+   ```bash
+   cd backend
+   npm install
+   npm run db:generate
+   npm run db:push
+   npm run db:seed
+   npm run dev
+   ```
+
+2. **Masuk ke direktori `frontend` (terminal baru):**
 
    ```bash
    cd frontend
    ```
 
-2. **Pasang dependensi:**
+3. **Pasang dependensi & jalankan dev server frontend:**
 
    ```bash
    npm install
-   ```
-
-3. **Jalankan server development:**
-
-   ```bash
    npm run dev
    ```
 
@@ -52,21 +58,23 @@ Secara default, frontend SI-KDO BMD sudah dilengkapi seed data dan persistensi `
    http://localhost:5173/
    ```
 
+> Proxy Vite otomatis meneruskan request `/api/*` ke `http://localhost:3001`. Jika backend berjalan di host/port berbeda, atur environment variable `VITE_API_URL` sebelum menjalankan Vite.
+
 ---
 
-### Opsi B — Menjalankan dari Root Repository
+### Opsi B — Menjalankan dari Root Repository (Direkomendasikan)
 
 Dari direktori utama proyek (`bpad-dki/`), Anda dapat menggunakan skrip di [`../package.json`](../package.json):
 
 ```bash
-# Menjalankan frontend saja
-npm run dev:frontend
-
 # Menjalankan backend (:3001) & frontend (:5173) secara bersamaan
 npm run dev:all
+
+# Atau menjalankan frontend saja (pastikan backend :3001 sudah berjalan)
+npm run dev:frontend
 ```
 
-> Catatan: jika menjalankan backend bersamaan, pastikan dependensi root & backend sudah terpasang (`npm install` di root serta konfigurasi database di folder `backend/`).
+> Catatan: pastikan dependensi di root, `backend/`, dan `frontend/` sudah terpasang serta database SQLite backend sudah diinisialisasi (`npm --prefix backend run db:push; npm --prefix backend run db:seed`).
 
 ---
 
@@ -95,9 +103,9 @@ npm run preview
 
 ---
 
-## 4. Akun Demo Bawaan (`seedData.ts`)
+## 4. Akun Demo Bawaan (`backend/prisma/seed.ts`)
 
-Saat aplikasi dibuka pertama kali, data awal dari [`src/data/seedData.ts`](./src/data/seedData.ts) dimuat ke `localStorage`. Berikut akun yang dapat langsung digunakan pada halaman `/login`:
+Saat database backend di-seed (`npm --prefix backend run db:seed`), akun berikut otomatis tersedia di tabel `AppUser` dan dapat langsung digunakan pada halaman `/login`:
 
 | Username | Password | Role (`code`) | Cakupan SKPD | Hak Akses Utama |
 |---|---|---|---|---|
@@ -124,8 +132,9 @@ Saat aplikasi dibuka pertama kali, data awal dari [`src/data/seedData.ts`](./src
 4. **Pengelolaan User & Role (`/users`, `/roles`)**
    - Status aktif/nonaktif akun pada halaman Users dapat diubah langsung memakai tombol toggle di tabel maupun modal edit.
    - Pada halaman Roles, Admin BPAD dapat menambah role baru dan mencentang izin `Lihat`, `Tambah`, `Ubah`, `Hapus` di tiap halaman.
-5. **Reset Data Demo ke Kondisi Awal**
-   - Klik tombol **Reset Data Demo** di bagian bawah sidebar untuk mengembalikan isi `localStorage` ke data awal `INITIAL_SEED_DATA`.
+5. **Reset Database Backend ke Kondisi Seed Awal**
+   - Untuk mengembalikan seluruh isi database ke data demo awal, jalankan dari terminal:
+     `npm --prefix backend run db:reset`
 
 ---
 
@@ -134,7 +143,8 @@ Saat aplikasi dibuka pertama kali, data awal dari [`src/data/seedData.ts`](./src
 | Masalah | Penyebab Umum | Solusi |
 |---|---|---|
 | Port `5173` sudah digunakan aplikasi lain | Ada instance Vite lain yang masih berjalan | Hentikan proses lama, atau jalankan `npx vite --port 5174` di folder `frontend/`. |
-| Perubahan fitur / skema tidak muncul setelah update kode | Data `localStorage` lama tersimpan di browser | Klik **Reset Data Demo** di sidebar, atau hapus key `si_kdo_bmd_db_v1` & `si_kdo_bmd_session_v1` lewat DevTools → *Application* → *Local Storage*. |
-| Gagal unggah PDF STNK/BPKB atau banyak foto | Melebihi batas `1.5 MB` (PDF) / `5 MB` (foto) atau kuota `localStorage` penuh (~5 MB per origin) | Kompres file PDF di bawah `1.5 MB`, gunakan foto yang lebih ringkas (foto otomatis dikompres ke WebP ≤ 960px), atau hapus data lama yang tidak terpakai. |
+| Login / fetch API gagal (`ECONNREFUSED` atau `500` proxy error) | Server backend (`:3001`) belum dijalankan atau DB belum di-seed | Jalankan backend (`npm --prefix backend run db:push; npm --prefix backend run db:seed; npm --prefix backend run dev`) atau pakai `npm run dev:all` dari root. |
+| Sesi login tidak valid / izin role berubah | Token JWT kedaluwarsa atau sesi lama di browser masih tersimpan | Logout lalu login kembali, atau hapus key `si_kdo_bmd_session_v1` lewat DevTools → *Application* → *Local Storage*. |
+| Gagal unggah PDF STNK/BPKB atau banyak foto | Melebihi batas `1.5 MB` (PDF) / `5 MB` (foto) | Kompres file PDF di bawah `1.5 MB` atau gunakan gambar yang lebih ringkas (foto otomatis dikompres ke WebP ≤ 960px). |
 | `npm run build` gagal saat `tsc -b` | Ada ketidaksesuaian tipe TypeScript | Periksa error yang dicetak `tsc -b` di terminal dan pastikan seluruh field di `src/types/bmd.ts` konsisten. |
 | PowerShell error saat menggabungkan perintah dengan `&&` | Windows PowerShell 5.1 tidak mendukung operator `&&` | Gunakan tanda titik koma `;` sebagai pemisah perintah, contoh: `npm run lint; npm run build`. |

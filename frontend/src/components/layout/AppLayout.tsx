@@ -8,24 +8,19 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  RotateCcw,
   Shield,
   UserCog,
   Users,
   Wrench,
   X,
 } from 'lucide-react'
-import {
-  getDashboardSummary,
-  listPerangkatDaerah,
-  resetDatabaseToSeed,
-} from '../../services/bmdService'
+import { getDashboardSummary } from '../../services/dashboard.service'
+import { listPerangkatDaerah } from '../../services/master.service'
 import type {
   AuthSession,
   PerangkatDaerah,
   RolePermissionMap,
 } from '../../types/bmd'
-import { ConfirmDialog } from '../common/ConfirmDialog'
 import { CustomSelect } from '../common/CustomSelect'
 
 interface AppLayoutProps {
@@ -36,7 +31,6 @@ interface AppLayoutProps {
   onChangeSelectedPdId: (pdId: number | null) => void
   onLogout: () => void
   children: ReactNode
-  onDatabaseReset?: () => void
 }
 
 const PAGE_TITLES: Record<string, string> = {
@@ -65,26 +59,40 @@ export function AppLayout({
   onChangeSelectedPdId,
   onLogout,
   children,
-  onDatabaseReset,
 }: AppLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [resetDialogOpen, setResetDialogOpen] = useState(false)
-  const [resetting, setResetting] = useState(false)
   const [pdList, setPdList] = useState<PerangkatDaerah[]>([])
   const [taxWarningCount, setTaxWarningCount] = useState(0)
   const [servisAktifCount, setServisAktifCount] = useState(0)
   const [sedangDipinjamCount, setSedangDipinjamCount] = useState(0)
   const location = useLocation()
 
+  const canReadPdList =
+    permissions.perangkatDaerah.read ||
+    permissions.dashboard.read ||
+    permissions.kendaraan.read ||
+    permissions.pajakDokumen.read ||
+    permissions.servis.read ||
+    permissions.peminjaman.read ||
+    permissions.pegawai.read ||
+    permissions.users.read
+
   useEffect(() => {
     let active = true
-    Promise.all([listPerangkatDaerah(), getDashboardSummary(selectedPdId)])
+    Promise.all([
+      canReadPdList ? listPerangkatDaerah() : Promise.resolve([]),
+      permissions.dashboard.read
+        ? getDashboardSummary(selectedPdId)
+        : Promise.resolve(null),
+    ])
       .then(([pds, summary]) => {
         if (active) {
           setPdList(pds)
-          setTaxWarningCount(summary.pajakPerluPerhatian)
-          setServisAktifCount(summary.totalServisAktif)
-          setSedangDipinjamCount(summary.totalSedangDipinjam)
+          if (summary) {
+            setTaxWarningCount(summary.pajakPerluPerhatian)
+            setServisAktifCount(summary.totalServisAktif)
+            setSedangDipinjamCount(summary.totalSedangDipinjam)
+          }
         }
       })
       .catch(() => {
@@ -93,7 +101,7 @@ export function AppLayout({
     return () => {
       active = false
     }
-  }, [selectedPdId, location.pathname])
+  }, [canReadPdList, permissions.dashboard.read, selectedPdId, location.pathname])
 
   useEffect(() => {
     if (!mobileMenuOpen) return
@@ -103,22 +111,6 @@ export function AppLayout({
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [mobileMenuOpen])
-
-  const handleConfirmReset = async () => {
-    setResetting(true)
-    try {
-      await resetDatabaseToSeed()
-      setResetDialogOpen(false)
-      onChangeSelectedPdId(null)
-      if (onDatabaseReset) {
-        onDatabaseReset()
-      } else {
-        window.location.reload()
-      }
-    } finally {
-      setResetting(false)
-    }
-  }
 
   const activePd = selectedPdId
     ? pdList.find((p) => p.id === selectedPdId)
@@ -324,9 +316,7 @@ export function AppLayout({
             </div>
           )}
 
-          {(permissions.users.read ||
-            permissions.roles.read ||
-            session.role === 'ADMIN_BPAD') && (
+          {(permissions.users.read || permissions.roles.read) && (
             <div className="space-y-1">
               <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Pengaturan Sistem
@@ -354,16 +344,6 @@ export function AppLayout({
                     <span className="truncate whitespace-nowrap">Role &amp; Hak Akses</span>
                   </span>
                 </NavLink>
-              )}
-              {session.role === 'ADMIN_BPAD' && (
-                <button
-                  type="button"
-                  onClick={() => setResetDialogOpen(true)}
-                  className="flex min-h-[42px] w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-                >
-                  <RotateCcw className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate whitespace-nowrap">Reset Data Awal</span>
-                </button>
               )}
             </div>
           )}
@@ -475,16 +455,6 @@ export function AppLayout({
           <div className="mx-auto max-w-7xl">{children}</div>
         </main>
       </div>
-
-      <ConfirmDialog
-        isOpen={resetDialogOpen}
-        title="Reset ke Data Awal?"
-        message="Seluruh perubahan yang Anda buat di penyimpanan lokal browser akan dikembalikan ke data awal (Dinas Pendidikan, Dinas Kesehatan, dan Dinas PUPR beserta PNS, User, dan KDO contoh)."
-        confirmLabel="Ya, Reset Data"
-        isLoading={resetting}
-        onConfirm={handleConfirmReset}
-        onCancel={() => setResetDialogOpen(false)}
-      />
     </div>
   )
 }

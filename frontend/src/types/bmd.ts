@@ -44,6 +44,7 @@ export interface RoleDefinition {
   description: string
   isSystem: boolean
   permissions: RolePermissionMap
+  userCount?: number
   createdAt: string
   updatedAt: string
 }
@@ -73,7 +74,6 @@ export interface AppUser {
   username: string
   nama: string
   email: string
-  password: string
   role: UserRole
   perangkatDaerahId: number | null
   aktif: boolean
@@ -92,11 +92,14 @@ export interface AppUserInput {
 }
 
 export interface AuthSession {
+  token: string
   userId: number
   username: string
   nama: string
   email: string
   role: UserRole
+  roleName: string
+  permissions: RolePermissionMap
   perangkatDaerahId: number | null
   loggedInAt: string
 }
