@@ -103,17 +103,15 @@ npm run preview
 
 ---
 
-## 4. Akun Demo Bawaan (`backend/prisma/seed.ts`)
+## 4. Akun Default (`backend/prisma/seed.ts`)
 
-Saat database backend di-seed (`npm --prefix backend run db:seed`), akun berikut otomatis tersedia di tabel `AppUser` dan dapat langsung digunakan pada halaman `/login`:
+Saat database backend di-seed (`npm --prefix backend run db:seed`), database diinisialisasi dalam kondisi bersih (tanpa data dummy operasional) dengan 1 role bawaan dan 1 akun Super Admin yang dapat langsung digunakan pada halaman `/login`:
 
 | Username | Password | Role (`code`) | Cakupan SKPD | Hak Akses Utama |
 |---|---|---|---|---|
 | `admin.bpad` | `admin123` | `ADMIN_BPAD` | Semua SKPD (`null`) | Akses penuh seluruh modul termasuk Users (`/users`) dan Roles (`/roles`) |
-| `operator.disdik` | `operator123` | `OPERATOR_SKPD` | Dinas Pendidikan (`id: 1`) | CRUD KDO, Peminjaman, Servis, PNS, & profil SKPD terkait (tanpa Users/Roles) |
-| `auditor.bmd` | `auditor123` | `VIEWER` | Semua SKPD (`null`) | Lihat-saja (*read-only*) pada Dashboard, KDO, Peminjaman, Servis, Pajak, PNS, & SKPD |
 
-> Anda juga dapat menekan kartu/tombol **Isi Cepat Akun Demo** di halaman Login untuk mengisi username dan password secara otomatis.
+> Anda juga dapat menekan kartu **Admin BPAD (`admin.bpad`)** pada panel akun uji coba di halaman Login untuk mengisi username dan password secara otomatis, lalu menambahkan role/user lain lewat menu **Role & Hak Akses** (`/roles`) dan **Manajemen User** (`/users`).
 
 ---
 

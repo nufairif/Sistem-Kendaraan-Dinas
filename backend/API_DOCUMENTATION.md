@@ -19,8 +19,10 @@ Dokumentasi lengkap backend untuk **Sistem Pengelolaan Kendaraan Dinas Operasion
    - [Perangkat Daerah](#74-perangkat-daerah)
    - [Pegawai (PNS)](#75-pegawai-pns)
    - [Kendaraan Dinas (KDO)](#76-kendaraan-dinas-kdo)
-   - [Servis & Pemeliharaan](#77-servis--pemeliharaan)
-   - [Users & RBAC](#78-users--rbac)
+   - [Monitoring & Peminjaman](#77-monitoring--peminjaman)
+   - [Servis & Pemeliharaan](#78-servis--pemeliharaan)
+   - [Users & RBAC](#79-users--rbac)
+   - [Roles & Hak Akses](#710-roles--hak-akses)
 8. [Pengujian Otomatis](#8-pengujian-otomatis)
 
 ---
@@ -30,16 +32,17 @@ Dokumentasi lengkap backend untuk **Sistem Pengelolaan Kendaraan Dinas Operasion
 ```text
 backend/
 ├── prisma/
-│   ├── schema.prisma               # Definisi model SQLite (6 tabel)
-│   ├── seed.ts                     # Data awal realistis + password hash bcrypt
+│   ├── schema.prisma               # Definisi model SQLite (8 tabel)
+│   ├── seed.ts                     # Seeder bersih (role ADMIN_BPAD + 1 akun Super Admin)
+│   ├── dump.sql                    # SQL dump DDL + seed awal
 │   └── dev.db                      # File database SQLite lokal
 ├── src/
 │   ├── docs/
 │   │   ├── paths/
-│   │   │   ├── fleet.paths.ts      # OpenAPI /api/kendaraan & /api/servis
+│   │   │   ├── fleet.paths.ts      # OpenAPI /api/kendaraan, /api/peminjaman & /api/servis
 │   │   │   ├── master.paths.ts     # OpenAPI /api/perangkat-daerah & /api/pegawai
 │   │   │   ├── system.paths.ts     # OpenAPI /api/health, /api/auth, /api/dashboard
-│   │   │   └── users.paths.ts      # OpenAPI /api/users
+│   │   │   └── users.paths.ts      # OpenAPI /api/users & /api/roles
 │   │   ├── components.ts           # Skema & response reusable OpenAPI 3.0.3
 │   │   ├── helpers.ts              # Builder helper definisi endpoint OpenAPI
 │   │   └── swagger.ts              # Perakitan spesifikasi Swagger + UI (/api-docs)
@@ -50,11 +53,13 @@ backend/
 │   │   ├── httpError.ts            # Kelas HttpError (400, 401, 403, 404, 409)
 │   │   ├── jwt.ts                  # Sign & verify JWT Bearer Token
 │   │   ├── password.ts             # Hash & verifikasi password (bcryptjs)
+│   │   ├── permissions.ts          # Matriks PAGE_PERMISSION_KEYS & RolePermissionMap
 │   │   ├── serializers.ts          # Parse field JSON & sembunyikan passwordHash
 │   │   └── tax.ts                  # Kalkulasi status jatuh tempo PKB & plat 5 tahunan
 │   ├── middleware/
-│   │   ├── auth.middleware.ts      # Middleware authenticate & requireRoles
+│   │   ├── auth.middleware.ts      # Middleware authenticate, requirePermission & requireAnyPermission
 │   │   ├── error.middleware.ts     # Global error handler & 404 handler
+│   │   ├── rateLimit.middleware.ts # Rate limiter /api dan /api/auth/login
 │   │   └── validate.middleware.ts  # Validasi parameter path :id
 │   ├── routes/                     # Thin HTTP route handlers
 │   │   ├── auth.routes.ts          # /api/auth/*
@@ -62,7 +67,9 @@ backend/
 │   │   ├── health.routes.ts        # /api/health
 │   │   ├── kendaraan.routes.ts     # /api/kendaraan/*
 │   │   ├── pegawai.routes.ts       # /api/pegawai/*
+│   │   ├── peminjaman.routes.ts    # /api/peminjaman/*
 │   │   ├── perangkat-daerah.routes.ts # /api/perangkat-daerah/*
+│   │   ├── roles.routes.ts         # /api/roles/*
 │   │   ├── servis.routes.ts        # /api/servis/*
 │   │   └── users.routes.ts         # /api/users/*
 │   ├── schemas/                    # Skema validasi input & query Zod
@@ -70,7 +77,9 @@ backend/
 │   │   ├── dashboard.schema.ts
 │   │   ├── kendaraan.schema.ts
 │   │   ├── pegawai.schema.ts
+│   │   ├── peminjaman.schema.ts
 │   │   ├── perangkat-daerah.schema.ts
+│   │   ├── roles.schema.ts
 │   │   ├── servis.schema.ts
 │   │   └── user.schema.ts
 │   ├── services/                   # Business logic & query/transaksi Prisma
@@ -78,13 +87,16 @@ backend/
 │   │   ├── dashboard.service.ts
 │   │   ├── kendaraan.service.ts
 │   │   ├── pegawai.service.ts
+│   │   ├── peminjaman.service.ts
 │   │   ├── perangkat-daerah.service.ts
+│   │   ├── roles.service.ts
 │   │   ├── servis.service.ts
 │   │   └── users.service.ts
 │   ├── app.ts                      # Setup Express, Helmet, CORS, Rate Limit, Swagger & Routes
 │   └── index.ts                    # Entrypoint HTTP server & graceful shutdown
 ├── tests/
-│   └── api.test.ts                 # Integration test otomatis (node:test)
+│   ├── api.test.ts                 # Integration test otomatis (node:test)
+│   └── fixtures.ts                 # Fixture seed untuk database test terisolasi
 ├── .env.example
 ├── package.json
 └── tsconfig.json
@@ -134,7 +146,7 @@ npm --prefix backend run start
 
 ## 3. Skema Database (SQLite + Prisma)
 
-Database didefinisikan pada [prisma/schema.prisma](file:///d:/1-dev/personal/bpad-dki/backend/prisma/schema.prisma) dengan 6 model utama:
+Database didefinisikan pada [prisma/schema.prisma](file:///d:/1-dev/personal/bpad-dki/backend/prisma/schema.prisma) dengan 8 model utama:
 
 1. **`PerangkatDaerah`**
    - Kolom: `id`, `kodeSkpd` *(unique)*, `nama`, `singkatan`, `kepalaDinas`, `alamat`, `telepon`, `createdAt`, `updatedAt`.
@@ -157,34 +169,40 @@ Database didefinisikan pada [prisma/schema.prisma](file:///d:/1-dev/personal/bpa
 5. **`ServisKendaraan`**
    - Kolom: `id`, `kendaraanId` (FK cascade), `tanggalServis`, `jenisServis` (`SERVIS_RUTIN | PERBAIKAN | GANTI_BAN_AKI | UJI_KIR | LAINNYA`), `status` (`TERJADWAL | DALAM_PERBAIKAN | SELESAI`), `bengkel`, `kilometer`, `biaya`, `servisBerikutnyaTanggal`, `deskripsi`, `buktiNota` *(JSON nullable)*, `createdAt`, `updatedAt`.
 
-6. **`AppUser`**
-   - Kolom: `id`, `username` *(unique)*, `nama`, `email` *(unique)*, `passwordHash`, `role` (`ADMIN_BPAD | OPERATOR_SKPD | VIEWER`), `perangkatDaerahId` (FK nullable), `aktif`, `createdAt`, `updatedAt`.
+6. **`PeminjamanKendaraan`**
+   - Kolom: `id`, `kendaraanId` (FK cascade), `peminjamPegawaiId` (FK nullable), `peminjamNama`, `peminjamInstansi`, `tujuanKeperluan`, `lokasiTujuan`, `tanggalPinjam`, `tanggalKembaliRencana`, `tanggalKembaliAktual`, `status` (`DIPINJAM | TERJADWAL | SELESAI | DIBATALKAN`), `nomorSuratTugas`, `kilometerAwal`, `kilometerAkhir`, `kondisiSaatKembali`, `catatan`, `createdAt`, `updatedAt`.
+
+7. **`RoleDefinition`**
+   - Kolom: `id`, `code` *(unique)*, `name`, `description`, `isSystem`, `permissions` *(JSON string `RolePermissionMap`)*, `createdAt`, `updatedAt`.
+
+8. **`AppUser`**
+   - Kolom: `id`, `username` *(unique)*, `nama`, `email` *(unique)*, `passwordHash`, `role` *(FK ke `RoleDefinition.code`)*, `perangkatDaerahId` (FK nullable), `aktif`, `createdAt`, `updatedAt`.
 
 ---
 
 ## 4. Keamanan Dasar, Autentikasi & RBAC
 
 - **Password Hashing**: `bcryptjs` (salt rounds `10`). Field `passwordHash` disaring via `serializeUser()` sehingga tidak pernah dikirim ke response API.
-- **Autentikasi JWT**: `Authorization: Bearer <token>` diverifikasi oleh middleware `authenticate`. Pada `NODE_ENV=production`, `JWT_SECRET` wajib terkonfigurasi.
-- **Role-Based Access Control (RBAC)**:
-  - `ADMIN_BPAD`: akses penuh seluruh endpoint (`GET`, `POST`, `PUT`, `DELETE`) termasuk manajemen akun `/api/users`.
-  - `OPERATOR_SKPD`: `GET` semua data operasional serta `POST`/`PUT`/`DELETE` untuk Perangkat Daerah, Pegawai, KDO, dan Servis (ditolak `403` pada `/api/users`).
-  - `VIEWER`: hanya dapat melakukan `GET` (`403 Forbidden` pada seluruh operasi `POST`/`PUT`/`DELETE` dan `/api/users`).
+- **Autentikasi JWT**: `Authorization: Bearer <token>` diverifikasi oleh middleware `authenticate`, yang juga membaca ulang data user & `RoleDefinition` di DB agar status `aktif` dan perubahan izin role berlaku real-time. Pada `NODE_ENV=production`, `JWT_SECRET` wajib terkonfigurasi.
+- **RBAC Dinamis per Halaman (`requirePermission` / `requireAnyPermission`)**:
+  - Setiap role memiliki matriks izin CRUD (`read`, `create`, `update`, `delete`) untuk modul: `dashboard`, `kendaraan`, `peminjaman`, `servis`, `pajakDokumen`, `pegawai`, `perangkatDaerah`, `users`, `roles`.
+  - Role bawaan `ADMIN_BPAD` (**Super Admin**) memiliki akses penuh permanen dan izinnya tidak dapat diubah (`403 Forbidden`).
 - **HTTP Security Headers**: `helmet` aktif dengan `app.disable('x-powered-by')`.
-- **Rate Limiting**:
-  - Umum `/api/*`: maks. `300` request per `15` menit per IP (`429 RATE_LIMIT_EXCEEDED`).
-  - Khusus `POST /api/auth/login`: maks. `20` percobaan per `15` menit per IP (`429 TOO_MANY_LOGIN_ATTEMPTS`).
+- **Rate Limiting** (`middleware/rateLimit.middleware.ts`):
+  - Umum `/api/*`: default `10000` (non-prod) / `2000` (prod) request per `15` menit per IP (`429 RATE_LIMIT_EXCEEDED`).
+  - Khusus `POST /api/auth/login`: default `200` (non-prod) / `50` (prod) percobaan per `15` menit per IP (`429 TOO_MANY_LOGIN_ATTEMPTS`).
+  - Dapat dikonfigurasi via `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`, dan `LOGIN_RATE_LIMIT_MAX`.
 - **Batas Payload & Proteksi SQL Injection**:
   - Batas JSON body `15mb` (mendukung foto WebP & PDF dokumen base64) dengan error `413 PAYLOAD_TOO_LARGE` jika terlampaui.
   - Seluruh query database menggunakan Prisma ORM terparameterisasi.
 
-### Akun Uji Coba Hasil Seeding (`db:seed`)
+### Akun Default Hasil Seeding Bersih (`db:seed`)
 
 | Role | Username | Email | Password |
 |---|---|---|---|
 | `ADMIN_BPAD` | `admin.bpad` | `admin@bpad.jakarta.go.id` | `admin123` |
-| `OPERATOR_SKPD` | `operator.disdik` | `operator.disdik@jakarta.go.id` | `operator123` |
-| `VIEWER` | `auditor.bmd` | `auditor@bpad.jakarta.go.id` | `auditor123` |
+
+*(Role atau akun tambahan dapat dibuat melalui endpoint `/api/roles` dan `/api/users` atau antarmuka web Manajemen Role & Manajemen User.)*
 
 ---
 
@@ -297,6 +315,8 @@ Cara menguji endpoint terproteksi di Swagger UI:
       "nama": "Administrator Pengelola BMD",
       "email": "admin@bpad.jakarta.go.id",
       "role": "ADMIN_BPAD",
+      "roleName": "Super Admin",
+      "permissions": {},
       "perangkatDaerahId": null,
       "loggedInAt": "2026-11-14T05:00:00.000Z"
     }
@@ -306,8 +326,8 @@ Cara menguji endpoint terproteksi di Swagger UI:
 - **Kemungkinan Status**: `200`, `400`, `401`, `403`, `429`, `500`.
 
 #### `GET /api/auth/me`
-- **Auth**: Bearer Token (`ADMIN_BPAD | OPERATOR_SKPD | VIEWER`)
-- **Kemungkinan Status**: `200`, `401`, `404`, `500`.
+- **Auth**: Bearer Token (semua pengguna aktif yang terautentikasi)
+- **Kemungkinan Status**: `200`, `401`, `403`, `404`, `500`.
 
 #### `POST /api/auth/logout`
 - **Auth**: Bearer Token
@@ -318,7 +338,7 @@ Cara menguji endpoint terproteksi di Swagger UI:
 ### 7.3 Dashboard
 
 #### `GET /api/dashboard`
-- **Auth**: Bearer Token
+- **Auth**: Bearer Token + izin `dashboard.read`
 - **Query Opsional**: `perangkatDaerahId` (integer positif)
 - **Response `200 OK`**:
 ```json
@@ -339,6 +359,7 @@ Cara menguji endpoint terproteksi di Swagger UI:
     "totalKhusus": 3,
     "pajakPerluPerhatian": 4,
     "totalServisAktif": 2,
+    "totalSedangDipinjam": 1,
     "totalBiayaServis": 6480000,
     "daftarPengingatPajak": [],
     "perPerangkatDaerah": [],
@@ -352,13 +373,13 @@ Cara menguji endpoint terproteksi di Swagger UI:
 
 ### 7.4 Perangkat Daerah
 
-| Method & Path | Role | Keterangan | Status Code |
+| Method & Path | Permission | Keterangan | Status Code |
 |---|---|---|---|
-| `GET /api/perangkat-daerah` | Semua role login | Daftar SKPD + `_count` (`?search=`) | `200`, `401`, `500` |
-| `GET /api/perangkat-daerah/:id` | Semua role login | Detail SKPD + daftar `pegawai` & `kendaraan` | `200`, `400`, `401`, `404`, `500` |
-| `POST /api/perangkat-daerah` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Tambah SKPD baru | `201`, `400`, `401`, `403`, `409`, `500` |
-| `PUT /api/perangkat-daerah/:id` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Ubah data SKPD | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
-| `DELETE /api/perangkat-daerah/:id` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Hapus SKPD (ditolak `409` jika punya PNS/KDO) | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `GET /api/perangkat-daerah` | `perangkatDaerah.read` / `dashboard.read` / `kendaraan.read` / `pajakDokumen.read` / `servis.read` / `peminjaman.read` / `pegawai.read` / `users.read` | Daftar SKPD + `_count` (`?search=`) | `200`, `401`, `403`, `500` |
+| `GET /api/perangkat-daerah/:id` | `perangkatDaerah.read` / `kendaraan.read` / `pajakDokumen.read` / `servis.read` / `peminjaman.read` / `pegawai.read` / `users.read` | Detail SKPD + daftar `pegawai` & `kendaraan` | `200`, `400`, `401`, `403`, `404`, `500` |
+| `POST /api/perangkat-daerah` | `perangkatDaerah.create` | Tambah SKPD baru | `201`, `400`, `401`, `403`, `409`, `500` |
+| `PUT /api/perangkat-daerah/:id` | `perangkatDaerah.update` | Ubah data SKPD | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `DELETE /api/perangkat-daerah/:id` | `perangkatDaerah.delete` | Hapus SKPD (ditolak `409` jika punya PNS/KDO) | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
 
 **Contoh Request JSON (`POST` / `PUT`)**:
 ```json
@@ -376,13 +397,13 @@ Cara menguji endpoint terproteksi di Swagger UI:
 
 ### 7.5 Pegawai (PNS)
 
-| Method & Path | Role | Keterangan | Status Code |
+| Method & Path | Permission | Keterangan | Status Code |
 |---|---|---|---|
-| `GET /api/pegawai` | Semua role login | Filter `?perangkatDaerahId=&golongan=&search=` | `200`, `400`, `401`, `500` |
-| `GET /api/pegawai/:id` | Semua role login | Detail PNS + daftar KDO yang dipegang | `200`, `400`, `401`, `404`, `500` |
-| `POST /api/pegawai` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Tambah PNS (validasi NIP 18 digit) | `201`, `400`, `401`, `403`, `409`, `500` |
-| `PUT /api/pegawai/:id` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Ubah data PNS | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
-| `DELETE /api/pegawai/:id` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Hapus PNS + lepas KDO ke Pool & catat riwayat | `200`, `400`, `401`, `403`, `404`, `500` |
+| `GET /api/pegawai` | `pegawai.read` / `kendaraan.read` / `peminjaman.read` | Filter `?perangkatDaerahId=&golongan=&search=` | `200`, `400`, `401`, `403`, `500` |
+| `GET /api/pegawai/:id` | `pegawai.read` / `kendaraan.read` / `peminjaman.read` | Detail PNS + daftar KDO yang dipegang | `200`, `400`, `401`, `403`, `404`, `500` |
+| `POST /api/pegawai` | `pegawai.create` | Tambah PNS (validasi NIP 18 digit) | `201`, `400`, `401`, `403`, `409`, `500` |
+| `PUT /api/pegawai/:id` | `pegawai.update` | Ubah data PNS | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `DELETE /api/pegawai/:id` | `pegawai.delete` | Hapus PNS + lepas KDO ke Pool & catat riwayat | `200`, `400`, `401`, `403`, `404`, `500` |
 
 **Contoh Request JSON (`POST` / `PUT`)**:
 ```json
@@ -402,14 +423,14 @@ Cara menguji endpoint terproteksi di Swagger UI:
 
 ### 7.6 Kendaraan Dinas (KDO)
 
-| Method & Path | Role | Keterangan | Status Code |
+| Method & Path | Permission | Keterangan | Status Code |
 |---|---|---|---|
-| `GET /api/kendaraan` | Semua role login | Filter `?kondisi=&jenis=&perangkatDaerahId=&pegawaiId=&penugasan=ASSIGNED\|POOL&search=` | `200`, `400`, `401`, `500` |
-| `GET /api/kendaraan/:id` | Semua role login | Detail KDO + relasi SKPD, PNS, `riwayat`, `servis` | `200`, `400`, `401`, `404`, `500` |
-| `GET /api/kendaraan/:id/riwayat` | Semua role login | Daftar log riwayat perubahan KDO | `200`, `400`, `401`, `404`, `500` |
-| `POST /api/kendaraan` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Tambah KDO + log riwayat `PENDAFTARAN` | `201`, `400`, `401`, `403`, `409`, `500` |
-| `PUT /api/kendaraan/:id` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Update KDO + log otomatis jika SKPD/PJ/kondisi berubah | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
-| `DELETE /api/kendaraan/:id` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Hapus KDO (cascade riwayat & servis) | `200`, `400`, `401`, `403`, `404`, `500` |
+| `GET /api/kendaraan` | `kendaraan.read` / `pajakDokumen.read` / `servis.read` / `peminjaman.read` | Filter `?kondisi=&jenis=&perangkatDaerahId=&pegawaiId=&penugasan=ASSIGNED\|POOL&search=` | `200`, `400`, `401`, `403`, `500` |
+| `GET /api/kendaraan/:id` | `kendaraan.read` / `pajakDokumen.read` / `servis.read` / `peminjaman.read` | Detail KDO + relasi SKPD, PNS, `riwayat`, `servis` | `200`, `400`, `401`, `403`, `404`, `500` |
+| `GET /api/kendaraan/:id/riwayat` | `kendaraan.read` / `dashboard.read` | Daftar log riwayat perubahan KDO | `200`, `400`, `401`, `403`, `404`, `500` |
+| `POST /api/kendaraan` | `kendaraan.create` | Tambah KDO + log riwayat `PENDAFTARAN` | `201`, `400`, `401`, `403`, `409`, `500` |
+| `PUT /api/kendaraan/:id` | `kendaraan.update` | Update KDO + log otomatis jika SKPD/PJ/kondisi berubah | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `DELETE /api/kendaraan/:id` | `kendaraan.delete` | Hapus KDO (cascade riwayat, servis & peminjaman) | `200`, `400`, `401`, `403`, `404`, `500` |
 
 **Contoh Request JSON (`POST` / `PUT`)**:
 ```json
@@ -440,15 +461,46 @@ Cara menguji endpoint terproteksi di Swagger UI:
 
 ---
 
-### 7.7 Servis & Pemeliharaan
+### 7.7 Monitoring & Peminjaman
 
-| Method & Path | Role | Keterangan | Status Code |
+| Method & Path | Permission | Keterangan | Status Code |
 |---|---|---|---|
-| `GET /api/servis` | Semua role login | Filter `?kendaraanId=&perangkatDaerahId=&status=&jenisServis=&search=` | `200`, `400`, `401`, `500` |
-| `GET /api/servis/:id` | Semua role login | Detail catatan servis | `200`, `400`, `401`, `404`, `500` |
-| `POST /api/servis` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Tambah catatan servis/uji KIR | `201`, `400`, `401`, `403`, `500` |
-| `PUT /api/servis/:id` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Ubah catatan servis | `200`, `400`, `401`, `403`, `404`, `500` |
-| `DELETE /api/servis/:id` | `ADMIN_BPAD`, `OPERATOR_SKPD` | Hapus catatan servis | `200`, `400`, `401`, `403`, `404`, `500` |
+| `GET /api/peminjaman` | `peminjaman.read` | Filter `?kendaraanId=&perangkatDaerahId=&status=&search=` | `200`, `400`, `401`, `403`, `500` |
+| `GET /api/peminjaman/:id` | `peminjaman.read` | Detail transaksi peminjaman | `200`, `400`, `401`, `403`, `404`, `500` |
+| `POST /api/peminjaman` | `peminjaman.create` | Buat peminjaman baru (validasi kelayakan KDO & bentrok tanggal) | `201`, `400`, `401`, `403`, `409`, `500` |
+| `PUT /api/peminjaman/:id` | `peminjaman.update` | Ubah data peminjaman + validasi ulang jadwal | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `POST /api/peminjaman/:id/complete` | `peminjaman.update` | Catat pengembalian (`SELESAI`) & sinkronisasi kondisi KDO bila berubah | `200`, `400`, `401`, `403`, `404`, `500` |
+| `DELETE /api/peminjaman/:id` | `peminjaman.delete` | Hapus data peminjaman | `200`, `400`, `401`, `403`, `404`, `500` |
+
+**Contoh Request JSON (`POST /api/peminjaman`)**:
+```json
+{
+  "kendaraanId": 1,
+  "peminjamPegawaiId": 1,
+  "peminjamNama": "Bambang Pamungkas, S.Kom.",
+  "peminjamInstansi": "Dinas Pendidikan",
+  "tujuanKeperluan": "Kunjungan monitoring aset sekolah",
+  "lokasiTujuan": "Jakarta Selatan",
+  "tanggalPinjam": "2026-11-15",
+  "tanggalKembaliRencana": "2026-11-16",
+  "status": "DIPINJAM",
+  "nomorSuratTugas": "ST/015/2026",
+  "kilometerAwal": 22500,
+  "catatan": "Unit siap jalan."
+}
+```
+
+---
+
+### 7.8 Servis & Pemeliharaan
+
+| Method & Path | Permission | Keterangan | Status Code |
+|---|---|---|---|
+| `GET /api/servis` | `servis.read` / `peminjaman.read` | Filter `?kendaraanId=&perangkatDaerahId=&status=&jenisServis=&search=` | `200`, `400`, `401`, `403`, `500` |
+| `GET /api/servis/:id` | `servis.read` / `peminjaman.read` | Detail catatan servis | `200`, `400`, `401`, `403`, `404`, `500` |
+| `POST /api/servis` | `servis.create` | Tambah catatan servis/uji KIR | `201`, `400`, `401`, `403`, `500` |
+| `PUT /api/servis/:id` | `servis.update` | Ubah catatan servis | `200`, `400`, `401`, `403`, `404`, `500` |
+| `DELETE /api/servis/:id` | `servis.delete` | Hapus catatan servis | `200`, `400`, `401`, `403`, `404`, `500` |
 
 **Contoh Request JSON (`POST` / `PUT`)**:
 ```json
@@ -468,15 +520,15 @@ Cara menguji endpoint terproteksi di Swagger UI:
 
 ---
 
-### 7.8 Users & RBAC
+### 7.9 Users & RBAC
 
-| Method & Path | Role | Keterangan | Status Code |
+| Method & Path | Permission | Keterangan | Status Code |
 |---|---|---|---|
-| `GET /api/users` | `ADMIN_BPAD` | Filter `?role=&aktif=true\|false&search=` | `200`, `401`, `403`, `500` |
-| `GET /api/users/:id` | `ADMIN_BPAD` | Detail akun pengguna (tanpa `passwordHash`) | `200`, `400`, `401`, `403`, `404`, `500` |
-| `POST /api/users` | `ADMIN_BPAD` | Buat akun baru (min. 6 karakter password) | `201`, `400`, `401`, `403`, `409`, `500` |
-| `PUT /api/users/:id` | `ADMIN_BPAD` | Ubah akun (password opsional; jaga min. 1 Admin aktif) | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
-| `DELETE /api/users/:id` | `ADMIN_BPAD` | Hapus akun (tidak bisa hapus akun sendiri / admin terakhir) | `200`, `400`, `401`, `403`, `404`, `500` |
+| `GET /api/users` | `users.read` | Filter `?role=&aktif=true\|false&search=` | `200`, `401`, `403`, `500` |
+| `GET /api/users/:id` | `users.read` | Detail akun pengguna (tanpa `passwordHash`) | `200`, `400`, `401`, `403`, `404`, `500` |
+| `POST /api/users` | `users.create` | Buat akun baru (min. 6 karakter password) | `201`, `400`, `401`, `403`, `409`, `500` |
+| `PUT /api/users/:id` | `users.update` | Ubah akun (password opsional; jaga min. 1 Admin aktif) | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `DELETE /api/users/:id` | `users.delete` | Hapus akun (tidak bisa hapus akun sendiri / admin terakhir) | `200`, `400`, `401`, `403`, `404`, `500` |
 
 **Contoh Request JSON (`POST`)**:
 ```json
@@ -490,6 +542,18 @@ Cara menguji endpoint terproteksi di Swagger UI:
   "aktif": true
 }
 ```
+
+---
+
+### 7.10 Roles & Hak Akses
+
+| Method & Path | Permission | Keterangan | Status Code |
+|---|---|---|---|
+| `GET /api/roles` | `roles.read` / `users.read` | Daftar role & matriks izin (`?search=`) | `200`, `401`, `403`, `500` |
+| `GET /api/roles/:id` | `roles.read` / `users.read` | Detail role & jumlah user | `200`, `400`, `401`, `403`, `404`, `500` |
+| `POST /api/roles` | `roles.create` | Buat role baru beserta matriks izin CRUD per halaman | `201`, `400`, `401`, `403`, `409`, `500` |
+| `PUT /api/roles/:id` | `roles.update` | Ubah role (izin `ADMIN_BPAD` bersifat tetap dan dilindungi `403`) | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `DELETE /api/roles/:id` | `roles.delete` | Hapus role kustom (ditolak jika `isSystem` atau masih dipakai user) | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
 
 ---
 
