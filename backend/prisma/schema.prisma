@@ -1,0 +1,186 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model PerangkatDaerah {
+  id          Int      @id @default(autoincrement())
+  kodeSkpd    String   @unique
+  nama        String
+  singkatan   String
+  kepalaDinas String   @default("")
+  alamat      String   @default("")
+  telepon     String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pegawai   Pegawai[]
+  kendaraan KendaraanDinas[]
+  riwayat   RiwayatKendaraan[]
+  users     AppUser[]
+}
+
+model Pegawai {
+  id                Int      @id @default(autoincrement())
+  nip               String   @unique
+  nama              String
+  jabatan           String
+  golongan          String
+  pangkat           String   @default("")
+  noHp              String   @default("")
+  email             String   @default("")
+  perangkatDaerahId Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  perangkatDaerah PerangkatDaerah       @relation(fields: [perangkatDaerahId], references: [id], onDelete: Restrict)
+  kendaraan       KendaraanDinas[]
+  riwayat         RiwayatKendaraan[]
+  peminjaman      PeminjamanKendaraan[]
+
+  @@index([perangkatDaerahId])
+}
+
+model KendaraanDinas {
+  id                        Int      @id @default(autoincrement())
+  nomorPolisi               String   @unique
+  kodeBarang                String   @default("")
+  merek                     String
+  tipeModel                 String
+  jenis                     String
+  tahunProduksi             Int
+  warna                     String
+  nomorRangka               String   @default("")
+  nomorMesin                String   @default("")
+  kondisi                   String
+  lokasiParkir              String   @default("")
+  keterangan                String   @default("")
+  fotos                     String   @default("[]")
+  dokumenStnk               String?
+  dokumenBpkb               String?
+  pajakTahunanJatuhTempo    String?
+  pajakLimaTahunanJatuhTempo String?
+  perangkatDaerahId         Int
+  pegawaiId                 Int?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  perangkatDaerah PerangkatDaerah       @relation(fields: [perangkatDaerahId], references: [id], onDelete: Restrict)
+  pegawai         Pegawai?              @relation(fields: [pegawaiId], references: [id], onDelete: SetNull)
+  riwayat         RiwayatKendaraan[]
+  servis          ServisKendaraan[]
+  peminjaman      PeminjamanKendaraan[]
+
+  @@index([perangkatDaerahId])
+  @@index([pegawaiId])
+  @@index([kondisi])
+  @@index([jenis])
+}
+
+model RiwayatKendaraan {
+  id                          Int      @id @default(autoincrement())
+  kendaraanId                 Int
+  pegawaiId                   Int?
+  pegawaiNamaSnapshot         String?
+  perangkatDaerahId           Int
+  perangkatDaerahNamaSnapshot String
+  jenisPerubahan              String
+  kondisiSaatItu              String
+  nomorBast                   String   @default("-")
+  catatan                     String   @default("")
+  tanggal                     DateTime @default(now())
+
+  kendaraan       KendaraanDinas  @relation(fields: [kendaraanId], references: [id], onDelete: Cascade)
+  pegawai         Pegawai?        @relation(fields: [pegawaiId], references: [id], onDelete: SetNull)
+  perangkatDaerah PerangkatDaerah @relation(fields: [perangkatDaerahId], references: [id], onDelete: Restrict)
+
+  @@index([kendaraanId])
+  @@index([perangkatDaerahId])
+  @@index([tanggal])
+}
+
+model ServisKendaraan {
+  id                      Int      @id @default(autoincrement())
+  kendaraanId             Int
+  tanggalServis           String
+  jenisServis             String
+  status                  String
+  bengkel                 String
+  kilometer               Int?
+  biaya                   Int      @default(0)
+  servisBerikutnyaTanggal String?
+  deskripsi               String
+  buktiNota               String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  kendaraan KendaraanDinas @relation(fields: [kendaraanId], references: [id], onDelete: Cascade)
+
+  @@index([kendaraanId])
+  @@index([status])
+}
+
+model PeminjamanKendaraan {
+  id                    Int      @id @default(autoincrement())
+  kendaraanId           Int
+  peminjamPegawaiId     Int?
+  peminjamNama          String
+  peminjamInstansi      String   @default("")
+  tujuanKeperluan       String
+  lokasiTujuan          String   @default("")
+  tanggalPinjam         String
+  tanggalKembaliRencana String
+  tanggalKembaliAktual  String?
+  status                String
+  nomorSuratTugas       String   @default("")
+  kilometerAwal         Int?
+  kilometerAkhir        Int?
+  kondisiSaatKembali    String?
+  catatan               String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  kendaraan       KendaraanDinas @relation(fields: [kendaraanId], references: [id], onDelete: Cascade)
+  peminjamPegawai Pegawai?       @relation(fields: [peminjamPegawaiId], references: [id], onDelete: SetNull)
+
+  @@index([kendaraanId])
+  @@index([peminjamPegawaiId])
+  @@index([status])
+  @@index([tanggalPinjam])
+}
+
+model RoleDefinition {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  description String   @default("")
+  isSystem    Boolean  @default(false)
+  permissions String   @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users AppUser[]
+}
+
+model AppUser {
+  id                Int      @id @default(autoincrement())
+  username          String   @unique
+  nama              String
+  email             String   @unique
+  passwordHash      String
+  role              String
+  perangkatDaerahId Int?
+  aktif             Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  roleDef         RoleDefinition   @relation(fields: [role], references: [code], onDelete: Restrict, onUpdate: Cascade)
+  perangkatDaerah PerangkatDaerah? @relation(fields: [perangkatDaerahId], references: [id], onDelete: SetNull)
+
+  @@index([role])
+  @@index([perangkatDaerahId])
+}
